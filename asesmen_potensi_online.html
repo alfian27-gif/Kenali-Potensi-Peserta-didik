@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Asesmen Potensi Komprehensif (Online)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- ====== IMPORTANT: PASTE YOUR FIREBASE CONFIG BELOW ======
+         Replace the placeholder object with your project's firebaseConfig
+         Example (replace values with yours):
+         const firebaseConfig = {
+           apiKey: "xxxx",
+           authDomain: "xxxx.firebaseapp.com",
+           projectId: "xxxx",
+           storageBucket: "xxxx.appspot.com",
+           messagingSenderId: "xxxx",
+           appId: "xxxx",
+           measurementId: "G-XXXX"
+         };
+         If you do NOT paste config, the app will still work locally but WILL NOT save results online.
+    -->
+    <script>
+        // Paste your firebaseConfig here (or keep null to disable online saving)
+        const firebaseConfig = null; // <-- REPLACE null with your firebaseConfig object
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f9ff; }
+        .score-bar { transition: width 0.8s ease-out; }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #e0f2f1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    </style>
+
+    <script>
+        // Minimal Tailwind config for dark mode icon behavior
+        tailwind.config = { darkMode: 'class' };
+    </script>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+<div id="app-container" class="bg-white shadow-xl rounded-2xl w-full max-w-3xl overflow-hidden">
+    <header class="bg-indigo-600 p-6 text-white rounded-t-2xl relative">
+        <button id="theme-toggle" onclick="toggleTheme()" class="absolute top-4 right-4 p-2 rounded-full bg-indigo-500/20">
+            <i id="theme-icon" data-lucide="sun" class="w-5 h-5"></i>
+        </button>
+        <h1 class="text-2xl font-extrabold flex items-center justify-center"><i data-lucide="brain-circuit" class="mr-3 w-6 h-6"></i>KENALI POTENSI</h1>
+        <p class="text-sm opacity-90 mt-1 text-center">Tes Kecerdasan Majemuk, Gaya Belajar, dan Rekomendasi Karier</p>
+    </header>
+
+    <main class="p-6">
+        <!-- Intro -->
+        <section id="intro-screen">
+            <h2 class="text-lg font-semibold mb-4">Data Peserta Didik</h2>
+            <form id="intro-form" onsubmit="startTest(event)">
+                <div class="mb-4">
+                    <label class="block text-sm">Nama Lengkap</label>
+                    <input id="student-name" required class="w-full px-3 py-2 border rounded-lg" placeholder="Masukkan nama...">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm">Kelas / Kelompok</label>
+                    <input id="student-class" required class="w-full px-3 py-2 border rounded-lg" placeholder="Contoh: Kelas 10-IPA 1">
+                </div>
+                <div class="flex gap-2">
+                    <button class="flex-1 bg-teal-600 text-white py-2 rounded-lg" type="submit">Mulai Asesmen</button>
+                    <button type="button" class="bg-gray-200 px-4 rounded-lg" onclick="demoFill()">Contoh Cepat</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Test -->
+        <section id="test-screen" class="hidden mt-4 custom-scrollbar max-h-[65vh] overflow-auto">
+            <h2 class="text-lg font-semibold mb-2">Kuesioner Potensi Diri (30 Pertanyaan)</h2>
+            <p class="text-sm text-gray-600 mb-4">Pilih jawaban yang paling sesuai. Tidak ada jawaban benar/salah.</p>
+            <form id="assessment-form" onsubmit="calculateResult(event)">
+                <div id="questions-container" class="space-y-4"></div>
+                <div class="mt-4">
+                    <button id="submit-button" class="w-full bg-indigo-600 text-white py-2 rounded-lg">Lihat Hasil Analisis</button>
+                    <p id="error-message" class="text-red-500 text-sm mt-2 hidden">Mohon pastikan semua pertanyaan terjawab.</p>
+                </div>
+            </form>
+        </section>
+
+        <!-- Result -->
+        <section id="result-screen" class="hidden mt-4 custom-scrollbar max-h-[70vh] overflow-auto">
+            <div class="bg-indigo-50 p-4 rounded-lg mb-4">
+                <p>Nama: <span id="result-name" class="font-bold"></span></p>
+                <p>Kelas: <span id="result-class" class="font-bold"></span></p>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="font-semibold">Profil Kecerdasan Majemuk (MI)</h3>
+                <canvas id="miChart" class="w-full h-64 bg-white rounded-lg p-2"></canvas>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="font-semibold">Gaya Belajar Utama</h3>
+                <div id="learning-style-result" class="mt-2 p-3 rounded-lg bg-teal-100 font-bold"></div>
+                <p id="learning-style-desc" class="text-sm text-gray-600 mt-2"></p>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="font-semibold">Rekomendasi Karir</h3>
+                <div id="career-suggestion" class="mt-2 p-3 rounded-lg bg-amber-50"></div>
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="window.print()" class="flex-1 bg-teal-600 text-white py-2 rounded-lg">Cetak / Simpan PDF</button>
+                <button onclick="restart()" class="bg-gray-200 px-4 rounded-lg">Ulangi</button>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="p-4 text-center text-xs text-gray-500">Aplikasi ilustratif. Simpan hasil ke Firestore jika config sudah diisi.</footer>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-lg max-w-sm w-full">
+        <h3 id="modal-title" class="font-bold mb-2">Peringatan</h3>
+        <p id="modal-message" class="text-sm mb-4"></p>
+        <button onclick="closeModal()" class="w-full bg-indigo-600 text-white py-2 rounded-lg">Mengerti</button>
+    </div>
+</div>
+
+<script type="module">
+    // Import Firebase only if firebaseConfig is provided
+    let db = null;
+    let auth = null;
+    let firestoreEnabled = false;
+
+    if (firebaseConfig) {
+        try {
+            const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+            const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+            const { getFirestore, collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            firestoreEnabled = true;
+
+            // Anonymous sign-in so we can write to Firestore with security rules
+            signInAnonymously(auth).catch(e => console.warn('Firebase sign-in warn:', e));
+            console.log('Firebase initialized');
+        } catch (e) {
+            console.error('Firebase import failed', e);
+            firestoreEnabled = false;
+        }
+    } else {
+        console.warn('firebaseConfig is null. Results will not be saved online.');
+    }
+
+    // Questions Data (same as you provided)
+    const questionsData = [
+        // VAK 6
+        { id: 1, text: 'Saat mempelajari hal baru, saya paling suka...', type: 'VAK', options: [{value:'V',label:'Melihat diagram, peta pikiran, atau video. (Visual)'},{value:'A',label:'Mendengarkan penjelasan lisan atau diskusi. (Auditori)'},{value:'K',label:'Mencoba langsung, melakukan praktik atau bergerak. (Kinestetik)'}]},
+        { id: 2, text: 'Saat mengingat informasi, saya cenderung mengingat...', type: 'VAK', options: [{value:'V',label:'Wajah, warna, atau gambar. (Visual)'},{value:'A',label:'Percakapan, nada suara, atau irama. (Auditori)'},{value:'K',label:'Apa yang saya lakukan atau rasakan saat itu. (Kinestetik)'}]},
+        { id: 3, text: 'Saat mengajar atau menjelaskan, saya cenderung...', type: 'VAK', options: [{value:'V',label:'Menggunakan papan tulis/slide dan gerakan tangan yang banyak. (Visual)'},{value:'A',label:'Berbicara dengan intonasi yang jelas dan sering berdiskusi. (Auditori)'},{value:'K',label:'Mengajak praktik, berjalan-jalan, atau menggunakan alat peraga fisik. (Kinestetik)'}]},
+        { id: 4, text: 'Saat bosan, saya sering...', type: 'VAK', options: [{value:'V',label:'Menggambar, mencoret-coret, atau melihat-lihat. (Visual)'},{value:'A',label:'Bersenandung, berbicara sendiri, atau mendengarkan musik. (Auditori)'},{value:'K',label:'Bergerak, mengetuk-ngetuk jari/kaki, atau bermain dengan benda. (Kinestetik)'}]},
+        { id: 5, text: 'Saya lebih menyukai pakaian yang...', type: 'VAK', options: [{value:'V',label:'Memiliki warna dan gaya yang menarik. (Visual)'},{value:'A',label:'Tidak terlalu penting penampilannya, asalkan nyaman didengar saat bergerak. (Auditori)'},{value:'K',label:'Sangat nyaman dan memungkinkan pergerakan bebas. (Kinestetik)'}]},
+        { id: 6, text: 'Saat saya mencoba menyusun sesuatu atau memperbaiki mesin, saya paling efektif belajar dari...', type: 'VAK', options: [{value:'V',label:'Melihat instruksi bergambar/diagram. (Visual)'},{value:'A',label:'Mendengarkan penjelasan langkah demi langkah. (Auditori)'},{value:'K',label:'Langsung mencoba dan merasakan bagaimana benda itu bekerja. (Kinestetik)'}]},
+        // MI (24) - 8 categories x 3
+        { id:7, text:'Saya menikmati membaca buku, menulis cerita, dan bermain kata-kata (teka-teki silang).', type:'MI', category:'Linguistik' },
+        { id:8, text:'Saya pandai berdebat, menjelaskan ide dengan jelas, dan mudah mempelajari bahasa baru.', type:'MI', category:'Linguistik' },
+        { id:9, text:'Saya senang membuat puisi, lirik lagu, atau cerita yang menggunakan gaya bahasa yang unik.', type:'MI', category:'Linguistik' },
+        { id:10, text:'Saya suka memecahkan masalah logis, teka-teki angka, atau perhitungan yang rumit.', type:'MI', category:'Logis-Matematis' },
+        { id:11, text:'Saya sering bertanya "mengapa" dan suka melihat pola, klasifikasi, dan urutan logis.', type:'MI', category:'Logis-Matematis' },
+        { id:12, text:'Saya menikmati permainan strategi seperti catur atau Sudoku yang membutuhkan pemikiran ke depan dan perencanaan.', type:'MI', category:'Logis-Matematis' },
+        { id:13, text:'Saya mudah membaca peta, menggambar sketsa, atau merakit benda tanpa instruksi.', type:'MI', category:'Spasial' },
+        { id:14, text:'Saya bisa membayangkan suatu objek dengan mudah di kepala saya, dan bisa melihatnya dari berbagai sudut.', type:'MI', category:'Spasial' },
+        { id:15, text:'Saya punya daya ingat yang baik terhadap lokasi, arah, dan tata letak ruangan di mana pun saya pernah berada.', type:'MI', category:'Spasial' },
+        { id:16, text:'Saya suka berolahraga, menari, dan merasa tidak nyaman jika harus duduk diam terlalu lama.', type:'MI', category:'Kinestetik' },
+        { id:17, text:'Saya pandai meniru gerakan, menggunakan bahasa tubuh, atau membuat kerajinan tangan yang detail.', type:'MI', category:'Kinestetik' },
+        { id:18, text:'Saya merasa lega dan lebih fokus setelah melakukan aktivitas fisik yang intens atau bergerak.', type:'MI', category:'Kinestetik' },
+        { id:19, text:'Saya peka terhadap nada, irama, dan sering bersenandung atau mengetuk-ngetukkan jari mengikuti irama.', type:'MI', category:'Musikal' },
+        { id:20, text:'Saya bisa membedakan berbagai jenis alat musik dan cepat menghafal lagu.', type:'MI', category:'Musikal' },
+        { id:21, text:'Saya bisa merasakan dan mengenali perbedaan kualitas antara alat musik atau rekaman suara yang berbeda.', type:'MI', category:'Musikal' },
+        { id:22, text:'Saya senang bekerja kelompok dan sering diminta menjadi penengah atau pemimpin di antara teman.', type:'MI', category:'Interpersonal' },
+        { id:23, text:'Saya mudah memahami perasaan, motivasi, dan menjalin hubungan baik dengan banyak orang.', type:'MI', category:'Interpersonal' },
+        { id:24, text:'Saya pandai memotivasi orang lain dan mampu menjadi mediator yang efektif dalam konflik.', type:'MI', category:'Interpersonal' },
+        { id:25, text:'Saya sering merenung, menulis jurnal, dan mengetahui kekuatan serta kelemahan diri sendiri.', type:'MI', category:'Intrapersonal' },
+        { id:26, text:'Saya punya tujuan hidup yang jelas dan saya yakin dengan keputusan yang saya ambil secara mandiri.', type:'MI', category:'Intrapersonal' },
+        { id:27, text:'Saya sering menghabiskan waktu sendirian untuk refleksi, meditasi, atau mengatur pikiran.', type:'MI', category:'Intrapersonal' },
+        { id:28, text:'Saya suka menghabiskan waktu di alam (hutan/pantai/taman) dan senang berkebun atau memelihara hewan.', type:'MI', category:'Naturalis' },
+        { id:29, text:'Saya peka terhadap lingkungan dan pandai mengklasifikasikan atau mengenali jenis-jenis tumbuhan/hewan.', type:'MI', category:'Naturalis' },
+        { id:30, text:'Saya tertarik pada ilmu-ilmu yang mempelajari bumi, seperti geologi atau astronomi, atau cara kerja ekosistem.', type:'MI', category:'Naturalis' }
+    ];
+
+    // State
+    const studentData = { name:'', class:'', vakScores:{V:0,A:0,K:0}, miScores:{} };
+    const miCategories = ['Linguistik','Logis-Matematis','Spasial','Kinestetik','Musikal','Interpersonal','Intrapersonal','Naturalis'];
+    miCategories.forEach(c => studentData.miScores[c]=0);
+
+    // Chart instance
+    let miChartInstance = null;
+
+    // Render questions
+    function renderQuestions(){
+        const container = document.getElementById('questions-container');
+        container.innerHTML = '';
+        questionsData.forEach((q,idx)=>{
+            const el = document.createElement('div');
+            el.className = 'p-3 bg-white rounded-lg border';
+            let html = `<p class="font-medium"><span class="text-indigo-600 mr-2">${idx+1}.</span> ${q.text}</p>`;
+            if (q.type==='VAK'){
+                q.options.forEach(opt=>{
+                    const id = `q${q.id}-${opt.value}`;
+                    html += `<label class="flex items-center gap-2 mt-2 cursor-pointer"><input required name="q${q.id}" type="radio" value="${opt.value}" id="${id}"> <span class="text-sm">${opt.label}</span></label>`;
+                });
+            } else {
+                html += `<label class="flex items-center gap-2 mt-2 cursor-pointer"><input required name="q${q.id}" type="radio" value="${q.category}_1"> <span>Ya, deskripsi ini cocok dengan saya.</span></label>`;
+                html += `<label class="flex items-center gap-2 mt-2 cursor-pointer"><input required name="q${q.id}" type="radio" value="${q.category}_0"> <span>Tidak, deskripsi ini kurang cocok.</span></label>`;
+            }
+            el.innerHTML = html;
+            container.appendChild(el);
+        });
+    }
+
+    // Navigation
+    function startTest(e){
+        e.preventDefault();
+        const name = document.getElementById('student-name').value.trim();
+        const cls = document.getElementById('student-class').value.trim();
+        if(!name||!cls){ showModal('Data Tidak Lengkap','Mohon isi Nama dan Kelas.'); return; }
+        studentData.name = name; studentData.class = cls;
+        document.getElementById('intro-screen').classList.add('hidden');
+        document.getElementById('test-screen').classList.remove('hidden');
+        renderQuestions();
+        lucide.createIcons();
+        window.scrollTo(0,0);
+    }
+
+    function calculateResult(e){
+        e.preventDefault();
+        const form = document.getElementById('assessment-form');
+        let allAnswered = true;
+        // reset scores
+        studentData.vakScores = {V:0,A:0,K:0};
+        miCategories.forEach(c=> studentData.miScores[c]=0);
+
+        questionsData.forEach(q=>{
+            const sel = form.querySelector(`input[name="q${q.id}"]:checked`);
+            if(!sel) allAnswered=false; else {
+                const val = sel.value;
+                if(q.type==='VAK') studentData.vakScores[val]++;
+                else { const [cat,score]=val.split('_'); studentData.miScores[cat]+=parseInt(score,10); }
+            }
+        });
+
+        if(!allAnswered){ document.getElementById('error-message').classList.remove('hidden'); window.scrollTo(0,0); return; }
+        document.getElementById('error-message').classList.add('hidden');
+
+        const report = generateFinalReport();
+        displayResults(report);
+        saveResultOnline(report).catch(err=> console.warn('Save failed',err));
+
+        document.getElementById('test-screen').classList.add('hidden');
+        document.getElementById('result-screen').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function generateFinalReport(){
+        // VAK
+        const lsMap = {V:'Visual',A:'Auditori',K:'Kinestetik'};
+        const vakArray = Object.keys(studentData.vakScores).map(k=>({style:lsMap[k],score:studentData.vakScores[k]}));
+        vakArray.sort((a,b)=>b.score-a.score);
+        const dominantLS = vakArray[0];
+        const maxVAK = 6;
+        let lsDesc = '';
+        if(dominantLS.style==='Visual') lsDesc = 'Anda belajar paling efektif dengan Melihat: gunakan diagram, video, catatan berwarna.';
+        else if(dominantLS.style==='Auditori') lsDesc = 'Anda belajar paling efektif dengan Mendengar: gunakan diskusi, rekaman, baca keras.';
+        else lsDesc = 'Anda belajar paling efektif dengan Berbuat: praktik, eksperimen, gerak.';
+
+        // MI
+        const miArr = Object.keys(studentData.miScores).map(k=>({category:k,score:studentData.miScores[k]}));
+        miArr.sort((a,b)=>b.score-a.score);
+        const dominantMI = miArr[0];
+
+        const careerMap = {
+            'Linguistik':{desc:'Unggul bahasa & ekspresi verbal.', suggestions:['Penulis','Jurnalis','Pengacara','Penerjemah','Guru Bahasa']},
+            'Logis-Matematis':{desc:'Mahir logika & angka.', suggestions:['Insinyur','Ilmuwan Data','Programmer','Akuntan']},
+            'Spasial':{desc:'Kuat visual & desain.', suggestions:['Arsitek','Desainer Grafis','Fotografer','Pilot']},
+            'Kinestetik':{desc:'Kuat koordinasi fisik.', suggestions:['Atlet','Fisioterapis','Koki','Ahli Bedah (praktik)']},
+            'Musikal':{desc:'Peka pada nada & irama.', suggestions:['Musisi','Guru Musik','Produser Suara']},
+            'Interpersonal':{desc:'Kuat hubungan sosial & empati.', suggestions:['Guru','Psikolog','HRD','Konselor']},
+            'Intrapersonal':{desc:'Kuat refleksi & kemandirian.', suggestions:['Wirausaha','Penulis','Peneliti']},
+            'Naturalis':{desc:'Peka lingkungan & biologi.', suggestions:['Ahli Biologi','Dokter Hewan','Konservasionis']}
+        };
+        const primaryCareer = careerMap[dominantMI.category] || {desc:'Skor merata', suggestions:['Konsultan','Manajer Proyek']};
+
+        return {
+            timestamp: new Date().toISOString(),
+            name: studentData.name,
+            class: studentData.class,
+            vakScores: {...studentData.vakScores},
+            miScores: {...studentData.miScores},
+            dominantLS: {...dominantLS, max:maxVAK, description:lsDesc},
+            dominantMI: {category:dominantMI.category, score:dominantMI.score, description:primaryCareer.desc, suggestions:primaryCareer.suggestions}
+        };
+    }
+
+    function displayResults(report){
+        document.getElementById('result-name').textContent = report.name;
+        document.getElementById('result-class').textContent = report.class;
+        document.getElementById('learning-style-result').textContent = `${report.dominantLS.style} (Skor: ${report.dominantLS.score}/${report.dominantLS.max})`;
+        document.getElementById('learning-style-desc').textContent = report.dominantLS.description;
+
+        // Career
+        let suggestionHTML = `<p class="font-bold">Kecerdasan Dominan: ${report.dominantMI.category} (Skor: ${report.dominantMI.score})</p>`;
+        suggestionHTML += `<p class="text-sm mt-1">${report.dominantMI.description}</p>`;
+        suggestionHTML += '<ul class="list-disc list-inside mt-2">';
+        report.dominantMI.suggestions.forEach(s=> suggestionHTML+=`<li>${s}</li>`);
+        suggestionHTML += '</ul>';
+        document.getElementById('career-suggestion').innerHTML = suggestionHTML;
+
+        // Chart
+        renderMiChart(report.miScores || studentData.miScores);
+    }
+
+    function renderMiChart(miScores){
+        const ctx = document.getElementById('miChart').getContext('2d');
+        if(miChartInstance) miChartInstance.destroy();
+        const labels = Object.keys(miScores);
+        const data = Object.values(miScores);
+        const maxScore = 3;
+        miChartInstance = new Chart(ctx, {
+            type:'radar',
+            data:{ labels, datasets:[{label:'Skor MI', data, backgroundColor:'rgba(79,70,229,0.35)', borderColor:'#4f46e5', borderWidth:2}]},
+            options:{
+                scales:{ r:{ suggestedMin:0, suggestedMax:maxScore, ticks:{ stepSize:1 } } },
+                plugins:{ legend:{ display:false } }
+            }
+        });
+    }
+
+    async function saveResultOnline(report){
+        if(!firestoreEnabled) {
+            // fallback: save to localStorage for offline usage
+            const all = JSON.parse(localStorage.getItem('assesments_offline')||'[]');
+            all.push(report);
+            localStorage.setItem('assesments_offline', JSON.stringify(all));
+            console.log('Saved locally (offline mode)');
+            return;
+        }
+
+        try{
+            const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+            const col = collection(db, 'assessments');
+            await addDoc(col, { ...report, createdAt: serverTimestamp() });
+            console.log('Saved to Firestore');
+        } catch(e){
+            console.warn('Firestore save error', e);
+        }
+    }
+
+    // Utilities
+    function showModal(title,msg){ document.getElementById('modal-title').textContent=title; document.getElementById('modal-message').textContent=msg; document.getElementById('modal').classList.remove('hidden'); }
+    function closeModal(){ document.getElementById('modal').classList.add('hidden'); }
+    function restart(){ window.location.reload(); }
+    function demoFill(){ document.getElementById('student-name').value='Budi Contoh'; document.getElementById('student-class').value='Kelas 10'; }
+
+    // Theme toggle
+    function loadTheme(){ const html=document.documentElement; const saved=localStorage.getItem('theme'); const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches; if(saved==='dark' || (!saved && prefersDark)) html.classList.add('dark'); else html.classList.remove('dark'); updateThemeIcon(html.classList.contains('dark')); }
+    function toggleTheme(){ const html=document.documentElement; const isDark=html.classList.toggle('dark'); localStorage.setItem('theme', isDark?'dark':'light'); updateThemeIcon(isDark); lucide.createIcons(); if(miChartInstance){ miChartInstance.update(); }}
+    function updateThemeIcon(isDark){ const icon=document.getElementById('theme-icon'); icon.dataset.lucide = isDark ? 'sun' : 'moon'; }
+
+    document.addEventListener('DOMContentLoaded', ()=>{ loadTheme(); lucide.createIcons(); });
+
+</script>
+</body>
+</html>
